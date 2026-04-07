@@ -2,31 +2,28 @@ name: Kanpur News Bot
 
 on:
   schedule:
-    - cron: '0 * * * *'     # Runs every hour
-  workflow_dispatch:        # Allows manual run for testing
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 jobs:
-  run-news-bot:
+  run-bot:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Install dependencies
+      - name: Install packages
         run: pip install feedparser requests
 
-      - name: Run Kanpur News Bot
+      - name: Run News Bot
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-        run: |
-          python - << 'EOF'
+        run: python - << 'EOF'
 import feedparser
 import requests
 from datetime import datetime
@@ -34,51 +31,39 @@ from datetime import datetime
 BOT_TOKEN = "${{ secrets.BOT_TOKEN }}"
 CHAT_ID = "${{ secrets.CHAT_ID }}"
 
-def get_kanpur_news():
-    print("🤖 Collecting Kanpur news...")
-    sources = [
-        "https://news.google.com/rss/search?q=kanpur&hl=en-IN&gl=IN&ceid=IN:en",
-        "https://news.google.com/rss/search?q=%E0%A4%95%E0%A4%BE%E0%A4%A8%E0%A4%AA%E0%A5%81%E0%A4%B0&hl=hi-IN&gl=IN&ceid=IN:hi",
-        "http://timesofindia.indiatimes.com/rssfeeds/3947067.cms"
-    ]
-    all_news = []
-    seen = set()
-    for url in sources:
-        try:
-            feed = feedparser.parse(url)
-            for item in feed.entries[:8]:
-                title = item.title.strip()
-                link = item.link.strip()
-                if link in seen or not title:
-                    continue
-                seen.add(link)
-                all_news.append((title, link, "Kanpur News"))
-        except:
-            pass
-    return all_news[:10]
+sources = [
+    "https://news.google.com/rss/search?q=kanpur&hl=en-IN&gl=IN&ceid=IN:en",
+    "https://news.google.com/rss/search?q=कानपुर&hl=hi-IN&gl=IN&ceid=IN:hi"
+]
 
-def send_news():
-    news_list = get_kanpur_news()
-    if not news_list:
-        print("😕 No news found right now.")
-        return
-    
+all_news = []
+seen = set()
+
+for url in sources:
+    feed = feedparser.parse(url)
+    for item in feed.entries[:8]:
+        title = item.title.strip()
+        link = item.link.strip()
+        if link in seen or not title:
+            continue
+        seen.add(link)
+        all_news.append((title, link))
+
+if not all_news:
+    print("No news found")
+else:
     now = datetime.now().strftime("%d %b %Y, %I:%M %p")
-    message = f"🗞️ KANPUR NEWS DIGEST\n🕐 {now}\n📊 {len(news_list)} fresh stories\n\n"
-    
-    for i, (title, link, source) in enumerate(news_list, 1):
+    message = f"🗞️ KANPUR NEWS DIGEST\n🕐 {now}\n📊 {len(all_news)} stories\n\n"
+    for i, (title, link) in enumerate(all_news[:10], 1):
         message += f"{i}. {title}\n   🔗 {link}\n\n"
-    
-    message += "#Kanpur #KanpurNews #कानपुर"
-    
+    message += "#Kanpur #KanpurNews"
+
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     data = {"chat_id": CHAT_ID, "text": message}
-    
-    response = requests.post(url, data=data)
-    if response.status_code == 200:
-        print("✅ News sent successfully to Telegram!")
+    r = requests.post(url, data=data)
+    print("Status:", r.status_code)
+    if r.status_code == 200:
+        print("✅ News sent successfully!")
     else:
-        print("Failed:", response.text)
-
-send_news()
+        print("Failed to send")
 EOF
