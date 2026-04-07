@@ -2,8 +2,8 @@ name: Kanpur News Bot
 
 on:
   schedule:
-    - cron: '0 * * * *'     # Runs every hour (at minute 0)
-  workflow_dispatch:        # Allows you to run it manually for testing
+    - cron: '0 * * * *'     # Runs every hour
+  workflow_dispatch:        # Allows manual run for testing
 
 jobs:
   run-news-bot:
@@ -19,18 +19,16 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: |
-          pip install feedparser requests schedule
+        run: pip install feedparser requests
 
       - name: Run Kanpur News Bot
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
         run: |
-          cat << EOF > kanpur_news_bot.py
+          python - << 'EOF'
 import feedparser
 import requests
-import time
 from datetime import datetime
 
 BOT_TOKEN = "${{ secrets.BOT_TOKEN }}"
@@ -48,10 +46,11 @@ def get_kanpur_news():
     for url in sources:
         try:
             feed = feedparser.parse(url)
-            for item in feed.entries[:10]:
+            for item in feed.entries[:8]:
                 title = item.title.strip()
                 link = item.link.strip()
-                if link in seen or not title: continue
+                if link in seen or not title:
+                    continue
                 seen.add(link)
                 all_news.append((title, link, "Kanpur News"))
         except:
@@ -61,22 +60,25 @@ def get_kanpur_news():
 def send_news():
     news_list = get_kanpur_news()
     if not news_list:
-        print("No news found.")
+        print("😕 No news found right now.")
         return
+    
     now = datetime.now().strftime("%d %b %Y, %I:%M %p")
-    message = f"🗞️ KANPUR NEWS DIGEST\\n🕐 {now}\\n📊 {len(news_list)} stories\\n\\n"
+    message = f"🗞️ KANPUR NEWS DIGEST\n🕐 {now}\n📊 {len(news_list)} fresh stories\n\n"
+    
     for i, (title, link, source) in enumerate(news_list, 1):
-        message += f"{i}. {title}\\n   🔗 {link}\\n\\n"
-    message += "#Kanpur #KanpurNews"
+        message += f"{i}. {title}\n   🔗 {link}\n\n"
+    
+    message += "#Kanpur #KanpurNews #कानपुर"
     
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     data = {"chat_id": CHAT_ID, "text": message}
+    
     response = requests.post(url, data=data)
     if response.status_code == 200:
-        print("✅ News sent to Telegram!")
+        print("✅ News sent successfully to Telegram!")
     else:
-        print("Failed to send:", response.text)
+        print("Failed:", response.text)
 
 send_news()
 EOF
-          python kanpur_news_bot.py
