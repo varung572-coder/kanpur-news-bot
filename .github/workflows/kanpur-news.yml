@@ -32,8 +32,12 @@ jobs:
           import os
           from datetime import datetime
 
-          BOT_TOKEN = os.getenv("BOT_TOKEN")
-          CHAT_ID = os.getenv("CHAT_ID")
+          token = os.getenv("BOT_TOKEN")
+          chat_id = os.getenv("CHAT_ID")
+
+          if not token or not chat_id:
+              print("❌ ERROR: Secrets (BOT_TOKEN or CHAT_ID) are missing!")
+              exit(1)
 
           sources = [
               "https://news.google.com/rss/search?q=kanpur&hl=en-IN&gl=IN&ceid=IN:en",
@@ -45,30 +49,28 @@ jobs:
 
           for url in sources:
               feed = feedparser.parse(url)
-              for item in feed.entries[:8]:
+              for item in feed.entries[:5]:
                   title = item.title.strip()
                   link = item.link.strip()
-                  if link in seen or not title:
-                      continue
-                  seen.add(link)
-                  all_news.append((title, link))
+                  if link not in seen:
+                      seen.add(link)
+                      all_news.append((title, link))
 
           if not all_news:
-              print("No news found")
+              print("ℹ️ No news found right now.")
           else:
-              now = datetime.now().strftime("%d %b %Y, %I:%M %p")
-              message = f"🗞️ KANPUR NEWS DIGEST\n🕐 {now}\n📊 {len(all_news)} stories\n\n"
-              for i, (title, link) in enumerate(all_news[:10], 1):
-                  message += f"{i}. {title}\n🔗 {link}\n\n"
+              now = datetime.now().strftime("%d %b, %I:%M %p")
+              message = f"🗞️ *KANPUR NEWS*\n⏰ {now}\n\n"
+              for i, (title, link) in enumerate(all_news[:8], 1):
+                  message += f"{i}. {title}\n🔗 [Read More]({link})\n\n"
               
-              message += "#Kanpur #KanpurNews"
+              url = f"https://api.telegram.org/bot{token}/sendMessage"
+              payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
+              r = requests.post(url, data=payload)
               
-              url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-              data = {"chat_id": CHAT_ID, "text": message}
-              r = requests.post(url, data=data)
-              print(f"Status: {r.status_code}")
+              print(f"Telegram Status: {r.status_code}")
               if r.status_code == 200:
-                  print("✅ Sent!")
+                  print("✅ Message sent successfully!")
               else:
-                  print(f"Failed: {r.text}")
+                  print(f"❌ Failed: {r.text}")
           EOF
