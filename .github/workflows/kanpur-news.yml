@@ -6,19 +6,25 @@ on:
   schedule:
     - cron: '30 */3 * * *'
   workflow_dispatch:
+
+permissions:
+  contents: write
+
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install packages
-        run: pip install feedparser requests
+        run: pip install feedparser requests pytz
 
       - name: Run News Bot
         env:
@@ -29,14 +35,28 @@ jobs:
           import feedparser
           import requests
           import os
-          from datetime import datetime
+          import json
+          from datetime import datetime, timedelta
+          import pytz
 
           token = os.getenv("BOT_TOKEN")
           chat_id = os.getenv("CHAT_ID")
 
           if not token or not chat_id:
-              print("❌ ERROR: Secrets (BOT_TOKEN or CHAT_ID) are missing!")
+              print("❌ ERROR: Secrets missing!")
               exit(1)
+
+          # IST TIME
+          ist = pytz.timezone("Asia/Kolkata")
+          now = datetime.now(ist).strftime("%d %b, %I:%M %p")
+
+          # Load old news
+          file_path = "sent_news.json"
+          try:
+              with open(file_path, "r") as f:
+                  old_news = set(json.load(f))
+          except:
+              old_news = set()
 
           sources = [
               "https://news.google.com/rss/search?q=kanpur&hl=en-IN&gl=IN&ceid=IN:en",
@@ -44,32 +64,63 @@ jobs:
           ]
 
           all_news = []
-          seen = set()
+          new_seen = set()
 
           for url in sources:
               feed = feedparser.parse(url)
-              for item in feed.entries[:5]:
+
+              for item in feed.entries:
                   title = item.title.strip()
                   link = item.link.strip()
-                  if link not in seen:
-                      seen.add(link)
-                      all_news.append((title, link))
+
+                  # Remove duplicates
+                  if title in old_news or title in new_seen:
+                      continue
+
+                  # Only recent (6 hours)
+                  if hasattr(item, 'published_parsed'):
+                      pub_time = datetime(*item.published_parsed[:6])
+                      if datetime.utcnow() - pub_time > timedelta(hours=6):
+                          continue
+
+                  new_seen.add(title)
+                  all_news.append((title, link))
 
           if not all_news:
-              print("ℹ️ No news found right now.")
+              print("ℹ️ No new fresh news found.")
           else:
-              now = datetime.now().strftime("%d %b, %I:%M %p")
               message = f"🗞️ *KANPUR NEWS*\n⏰ {now}\n\n"
-              for i, (title, link) in enumerate(all_news[:8], 1):
+
+              for i, (title, link) in enumerate(all_news, 1):
                   message += f"{i}. {title}\n🔗 [Read More]({link})\n\n"
-              
+
               url = f"https://api.telegram.org/bot{token}/sendMessage"
-              payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
+              payload = {
+                  "chat_id": chat_id,
+                  "text": message,
+                  "parse_mode": "Markdown",
+                  "disable_web_page_preview": True
+              }
+
               r = requests.post(url, data=payload)
-              
+
               print(f"Telegram Status: {r.status_code}")
+
               if r.status_code == 200:
-                  print("✅ Message sent successfully!")
+                  print("✅ Message sent!")
+
+                  # Save news
+                  updated_news = list(old_news.union(new_seen))
+                  with open(file_path, "w") as f:
+                      json.dump(updated_news, f)
               else:
                   print(f"❌ Failed: {r.text}")
           EOF
+
+      - name: Commit sent news database
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          git add sent_news.json
+          git commit -m "Update sent news" || echo "No changes"
+          git push
