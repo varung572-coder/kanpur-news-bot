@@ -50,13 +50,15 @@ jobs:
           ist = pytz.timezone("Asia/Kolkata")
           now = datetime.now(ist).strftime("%d %b, %I:%M %p")
 
-          # Load old news
+          # FILE SETUP
           file_path = "sent_news.json"
-          try:
-              with open(file_path, "r") as f:
-                  old_news = set(json.load(f))
-          except:
-              old_news = set()
+
+          if not os.path.exists(file_path):
+              with open(file_path, "w") as f:
+                  json.dump([], f)
+
+          with open(file_path, "r") as f:
+              old_news = set(json.load(f))
 
           sources = [
               "https://news.google.com/rss/search?q=kanpur&hl=en-IN&gl=IN&ceid=IN:en",
@@ -73,11 +75,11 @@ jobs:
                   title = item.title.strip()
                   link = item.link.strip()
 
-                  # Remove duplicates
+                  # REMOVE DUPLICATES
                   if title in old_news or title in new_seen:
                       continue
 
-                  # Only recent (6 hours)
+                  # ONLY RECENT (6 HOURS)
                   if hasattr(item, 'published_parsed'):
                       pub_time = datetime(*item.published_parsed[:6])
                       if datetime.utcnow() - pub_time > timedelta(hours=6):
@@ -86,15 +88,27 @@ jobs:
                   new_seen.add(title)
                   all_news.append((title, link))
 
+          url = f"https://api.telegram.org/bot{token}/sendMessage"
+
+          # ✅ IF NO NEWS → SEND MESSAGE
           if not all_news:
-              print("ℹ️ No new fresh news found.")
+              message = f"🗞️ *KANPUR NEWS*\n⏰ {now}\n\n⚠️ No new news found right now.\nPlease check again later."
+
+              payload = {
+                  "chat_id": chat_id,
+                  "text": message,
+                  "parse_mode": "Markdown"
+              }
+
+              r = requests.post(url, data=payload)
+              print(f"Telegram Status: {r.status_code}")
+
           else:
               message = f"🗞️ *KANPUR NEWS*\n⏰ {now}\n\n"
 
               for i, (title, link) in enumerate(all_news, 1):
                   message += f"{i}. {title}\n🔗 [Read More]({link})\n\n"
 
-              url = f"https://api.telegram.org/bot{token}/sendMessage"
               payload = {
                   "chat_id": chat_id,
                   "text": message,
@@ -103,16 +117,16 @@ jobs:
               }
 
               r = requests.post(url, data=payload)
-
               print(f"Telegram Status: {r.status_code}")
 
               if r.status_code == 200:
                   print("✅ Message sent!")
 
-                  # Save news
+                  # SAVE SENT NEWS
                   updated_news = list(old_news.union(new_seen))
                   with open(file_path, "w") as f:
                       json.dump(updated_news, f)
+
               else:
                   print(f"❌ Failed: {r.text}")
           EOF
@@ -121,6 +135,11 @@ jobs:
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "actions@github.com"
-          git add sent_news.json
-          git commit -m "Update sent news" || echo "No changes"
-          git push
+
+          if [ -f sent_news.json ]; then
+            git add sent_news.json
+            git commit -m "Update sent news" || echo "No changes"
+            git push
+          else
+            echo "No file found, skipping commit"
+          fi
